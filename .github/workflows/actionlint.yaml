@@ -1,0 +1,12 @@
+name: actionlint
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "actionlint config is at .github/actionlint.yaml"

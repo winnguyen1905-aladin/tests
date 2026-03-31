@@ -1,0 +1,195 @@
+name: CD - Continuous Delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy"
+        required: true
+        default: "staging-new"
+        type: choice
+        options:
+          - staging-new
+          - staging
+          - main
+
+env:
+  DEPLOY_USER: deploy
+  DEPLOY_PATH: /opt/sam3-staging
+  STAGING_API_PORT: "8005"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/sam3
+  # IMAGE_NAME is lowercased in a job step because repository_owner may be mixed-case
+
+jobs:
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-24.04
+    environment:
+      name: DEPLOY_HOST
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    steps:
+      - name: Resolve deploy branch
+        id: branch
+        run: |
+          echo "branch=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+
+      - name: Lowercase image name
+        run: |
+          echo "IMAGE_NAME=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/sam3" >> $GITHUB_ENV
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.branch }}
+          sparse-checkout: |
+            docker-compose.prod.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --accept-routes
+
+      - name: Prepare SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Upload compose file via SCP
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "mkdir -p /tmp/sam3-staging"
+          scp -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            docker-compose.prod.yml \
+            ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/sam3-staging/docker-compose.prod.yml
+
+      - name: Deploy via SSH
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          REMOTE_SCRIPT=$(echo 'set -e
+            DEPLOY_BRANCH="$1"
+            DEPLOY_PATH="$2"
+            IMAGE="$3"
+            GHCR_USER="$4"
+            GHCR_TOKEN="$5"
+            STAGING_API_PORT="$6"
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            mkdir -p "$DEPLOY_PATH"
+            cp /tmp/sam3-staging/docker-compose.prod.yml "$DEPLOY_PATH/docker-compose.prod.yml"
+            [ -f /tmp/sam3-staging/.env.prod ] && cp /tmp/sam3-staging/.env.prod "$DEPLOY_PATH/.env.prod" || true
+            if [ -f "$DEPLOY_PATH/.env.prod" ]; then
+              grep -qE '^API_PORT=' "$DEPLOY_PATH/.env.prod" || echo "API_PORT=$STAGING_API_PORT" >> "$DEPLOY_PATH/.env.prod"
+            fi
+            docker pull "$IMAGE:$DEPLOY_BRANCH" || docker pull "$IMAGE:latest"
+            docker tag "$IMAGE:$DEPLOY_BRANCH" sam3-api:staging 2>/dev/null || docker tag "$IMAGE:latest" sam3-api:staging
+            docker compose -f "$DEPLOY_PATH/docker-compose.prod.yml" --env-file "$DEPLOY_PATH/.env.prod" down --remove-orphans || true
+            docker compose -f "$DEPLOY_PATH/docker-compose.prod.yml" --env-file "$DEPLOY_PATH/.env.prod" up -d
+            for _i in $(seq 1 20); do
+              curl -sf "http://localhost:$STAGING_API_PORT/health" && echo "OK" && break
+              sleep 5
+            done' | base64 -w0)
+          ssh -T -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=30 \
+            ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            bash -s -- \
+              "${{ steps.branch.outputs.branch }}" \
+              "${{ env.DEPLOY_PATH }}" \
+              "${{ env.IMAGE_NAME }}" \
+              "$GHCR_USER" \
+              "$GHCR_TOKEN" \
+              "${{ env.STAGING_API_PORT }}" \
+              <<< "$(echo "$REMOTE_SCRIPT" | base64 -d)"
+
+      # Curl from the runner to DEPLOY_HOST:port often fails (curl exit 7 = connection failed).
+      # SSH already works; probe /health on the server loopback instead.
+      - name: Smoke tests
+        env:
+          PORT: ${{ env.STAGING_API_PORT }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=15 \
+            ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "bash -lc 'for i in \$(seq 1 60); do curl -sf http://127.0.0.1:${PORT}/health && echo Health OK && exit 0; sleep 2; done; echo Smoke test failed >&2; exit 1'"
+          echo "Smoke tests passed"
+
+  rollback:
+    name: Rollback on Failure
+    needs: [deploy]
+    if: always() && needs.deploy.result == 'failure'
+    runs-on: ubuntu-24.04
+    environment:
+      name: DEPLOY_HOST
+    steps:
+      - name: Setup Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --accept-routes
+
+      - name: Prepare SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Rollback
+        run: |
+          REMOTE_SCRIPT=$(echo 'docker compose -f "$1/docker-compose.prod.yml" --env-file "$1/.env.prod" down --remove-orphans || true
+            docker compose -f "$1/docker-compose.prod.yml" --env-file "$1/.env.prod" up -d' | base64 -w0)
+          ssh -T -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            bash -s -- "${{ env.DEPLOY_PATH }}" \
+            <<< "$(echo "$REMOTE_SCRIPT" | base64 -d)"
+
+      - name: Notify
+        if: vars.TELEGRAM_ENABLED == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: "⚠️ SAM3 deployment FAILED — rolled back on staging | ${{ github.sha }}"
+
+  notify:
+    name: Notify Success
+    needs: [deploy]
+    if: needs.deploy.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Telegram notification
+        if: vars.TELEGRAM_ENABLED == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: "✅ SAM3 deployed to staging | ${{ github.ref_name }} | ${{ github.sha }}"
+
+      - name: Summary
+        run: |
+          echo "## ✅ Deployed"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"

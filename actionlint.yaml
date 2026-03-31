@@ -1,0 +1,8 @@
+# actionlint configuration
+# Valid keys: formatter, no-color, ignore, shellcheck, etc.
+# See: https://github.com/rhysd/actionlint/blob/main/docs/config.md
+formatter: "colored"
+no-color: true
+ignore: |
+  # Ignore runner connectivity errors during validation
+  # (self-hosted runners may not be reachable from actionlint's environment)

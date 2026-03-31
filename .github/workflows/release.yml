@@ -1,0 +1,242 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/sam3
+  DEPLOY_USER: deploy
+
+jobs:
+  # ── Job 1: Release tests ─────────────────────────────────────────────
+  release-tests:
+    name: Pre-release Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run all tests (excluding slow/integration)
+        run: uv run pytest tests/ -m "not slow and not gpu" -v --tb=short
+
+      - name: Build image
+        run: |
+          docker build --target production \
+            --tag sam3:release \
+            --tag ${{ env.IMAGE_NAME }}:${{ github.ref_name }} .
+
+      - name: Run image health check
+        run: |
+          docker run -d --name sam3-test \
+            -e ENV=prod \
+            -p 8001:8001 \
+            --health-cmd "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8001/health\")'" \
+            --health-interval 5s \
+            --health-retries 10 \
+            --health-timeout 5s \
+            sam3:release
+
+          echo "Waiting for container to be healthy..."
+          sleep 60
+          docker inspect --format='{{.State.Health.Status}}' sam3-test
+
+      - name: Test health endpoint
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed: $STATUS"
+            docker logs sam3-test
+            exit 1
+          fi
+          echo "Health check: $STATUS"
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f sam3-test
+
+  # ── Job 2: Build & Push release images ────────────────────────────────
+  build-release:
+    name: Build & Push Release Images
+    needs: release-tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix={{branch}}-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=production
+          cache-to: type=gha,mode=max,scope=production
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+          labels: |
+            org.opencontainers.image.title=SAM3
+            org.opencontainers.image.description=Smart Agricultural Durian Detection & Matching System
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build and push development image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.ref_name }}-dev
+          target: development
+          cache-from: type=gha,scope=dev
+          cache-to: type=gha,mode=max,scope=dev
+
+  # ── Job 3: Create GitHub Release ──────────────────────────────────────
+  github-release:
+    name: Create GitHub Release
+    needs: build-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate changelog
+        id: changelog
+        uses: metcalfc/changelog-generator@v4
+        with:
+          mytoken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          generate_release_notes: true
+          files: |
+            docker-compose.prod.yml
+            .env.prod.example
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Job 4: Deploy to production ─────────────────────────────────────
+  deploy-production:
+    name: Deploy to Production
+    needs: [release-tests, build-release]
+    runs-on: ubuntu-24.04
+    environment:
+      name: production
+      url: http://${{ vars.DEPLOY_HOST }}:8001
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docker-compose.prod.yml
+          sparse-checkout-cone-mode: false
+
+      # ── Step 1: Connect via Tailscale ──────────────────────────────
+      - name: Connect via Tailscale
+        uses: tailscale/github-action@v4.1.2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          tags: tag:ci
+          ping: true
+
+      # ── Step 2: Login to GHCR ─────────────────────────────────────
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Step 3: Deploy via SSH over Tailscale ─────────────────────
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
+          script: |
+            set -e
+
+            echo "=== Production deployment started at $(date) ==="
+            echo "Deploying version: ${{ github.ref_name }}"
+
+            # Create production directory
+            mkdir -p /opt/sam3
+
+            # Copy compose file
+            cp docker-compose.prod.yml /opt/sam3/docker-compose.prod.yml
+
+            # Stop old containers gracefully
+            echo "Stopping existing containers..."
+            docker compose -f /opt/sam3/docker-compose.prod.yml down --remove-orphans || true
+
+            # Pull latest image
+            echo "Pulling release image..."
+            docker pull ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+            docker tag ${{ env.IMAGE_NAME }}:${{ github.ref_name }} sam3-api:latest
+
+            # Start new containers
+            echo "Starting services..."
+            docker compose -f /opt/sam3/docker-compose.prod.yml up -d
+
+            # Health check
+            echo "Waiting for services to be healthy..."
+            for _i in $(seq 1 20); do
+              if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
+                echo "✓ API is healthy"
+                break
+              fi
+              echo "Waiting for API... ($_i/20)"
+              sleep 5
+            done
+
+            echo "=== Deployment complete at $(date) ==="
+            echo "Deployed version ${{ github.ref_name }}"

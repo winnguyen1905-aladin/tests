@@ -1,0 +1,1599 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kiểm Tra Nhận Dạng Cây</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .file-drop-zone {
+            border: 3px dashed #667eea;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            background: #f8f9ff;
+            transition: all 0.3s ease;
+        }
+
+        .file-drop-zone:hover {
+            background: #f0f1ff;
+        }
+
+        .file-drop-zone.drag-over {
+            background: #e0e1ff;
+            border-color: #28a745;
+        }
+
+        .paste-hint {
+            font-size: 12px;
+            color: #888;
+            margin-top: 8px;
+        }
+
+        .paste-btn {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .paste-btn:hover {
+            background: #5568d3;
+        }
+
+        .selected-images {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-top: 15px;
+        }
+
+        .selected-image-item {
+            position: relative;
+            border-radius: 10px;
+            overflow: hidden;
+            width: 180px;
+            flex-shrink: 0;
+            border: 2px solid #d4edda;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .selected-image-item img {
+            width: 100%;
+            height: 140px;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* Per-image GPS/angle edit panel */
+        .img-geo-edit {
+            background: #f0fff4;
+            border-top: 2px solid #b2dfdb;
+            padding: 8px 10px;
+        }
+
+        .img-geo-edit label {
+            display: block;
+            color: #555;
+            font-weight: 600;
+            margin-bottom: 2px;
+            font-size: 11px;
+        }
+
+        .img-geo-edit input[type="number"] {
+            width: 100%;
+            padding: 5px 7px;
+            border: 1.5px solid #a5d6a7;
+            border-radius: 5px;
+            font-size: 11px;
+            margin-bottom: 5px;
+            box-sizing: border-box;
+            background: white;
+        }
+
+        .img-geo-edit input[type="number"]:focus {
+            outline: none;
+            border-color: #28a745;
+            box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.15);
+        }
+
+        .selected-image-item .remove-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(220, 53, 69, 0.9);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .selected-image-item .remove-btn:hover {
+            background: rgba(220, 53, 69, 1);
+        }
+
+        .image-count {
+            font-size: 14px;
+            color: #667eea;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* ---------- RESULT DISPLAY ---------- */
+        .result-area {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .result-area.show {
+            display: block;
+        }
+
+        .result-summary {
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .result-summary.success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+
+        .result-summary.error {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+
+        .result-card {
+            background: #fafbff;
+            border: 1px solid #e8e8ee;
+            border-radius: 14px;
+            margin-bottom: 14px;
+            overflow: hidden;
+            transition: box-shadow 0.2s;
+        }
+
+        .result-card:hover {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .result-card-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 18px 20px;
+            background: white;
+            border-bottom: 1px solid #f0f0f5;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .result-card-header:hover {
+            background: #f8f9ff;
+        }
+
+        .result-card-header .result-icon {
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+
+        .result-card-header .result-title {
+            flex: 1;
+        }
+
+        .result-card-header .result-title h4 {
+            font-size: 15px;
+            margin-bottom: 3px;
+            color: #333;
+        }
+
+        .result-card-header .result-title .result-subtitle {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .header-confidence {
+            font-size: 14px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .chevron {
+            font-size: 14px;
+            color: #aaa;
+            transition: transform 0.3s ease;
+        }
+
+        .result-card.open .chevron {
+            transform: rotate(180deg);
+        }
+
+        .result-badge {
+            display: inline-block;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-match {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-no-match {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .badge-unknown {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .result-card-body {
+            padding: 0 20px;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease, padding 0.3s ease;
+        }
+
+        .result-card.open .result-card-body {
+            padding: 18px 20px;
+            max-height: 2000px;
+        }
+
+        .result-metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+
+        .metric-box {
+            background: white;
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid #eee;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .metric-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .metric-desc {
+            font-size: 10px;
+            color: #aaa;
+            margin-top: 2px;
+            line-height: 1.3;
+        }
+
+        .metric-value.highlight {
+            color: #667eea;
+        }
+
+        /* Confidence bar */
+        .confidence-bar-container {
+            background: white;
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid #eee;
+            grid-column: 1 / -1;
+        }
+
+        .confidence-bar-track {
+            background: #e9ecef;
+            border-radius: 8px;
+            height: 12px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .confidence-bar-fill {
+            height: 100%;
+            border-radius: 8px;
+            transition: width 0.8s ease;
+        }
+
+        .bar-high {
+            background: linear-gradient(90deg, #28a745, #20c997);
+        }
+
+        .bar-medium {
+            background: linear-gradient(90deg, #ffc107, #fd7e14);
+        }
+
+        .bar-low {
+            background: linear-gradient(90deg, #dc3545, #e83e8c);
+        }
+
+        .confidence-bar-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .confidence-percent {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        /* Technical details toggle */
+        .tech-toggle {
+            background: none;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #667eea;
+            width: 100%;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .tech-toggle:hover {
+            background: #f0f1ff;
+            border-color: #667eea;
+        }
+
+        .tech-details {
+            display: none;
+            margin-top: 14px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .tech-details.open {
+            display: block;
+        }
+
+        .tech-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .tech-table td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #e8e8ee;
+            vertical-align: top;
+        }
+
+        .tech-table td:first-child {
+            color: #888;
+            white-space: nowrap;
+            width: 40%;
+            font-weight: 500;
+        }
+
+        .tech-table td:last-child {
+            color: #333;
+            word-break: break-all;
+        }
+
+        /* Quick test gallery */
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
+        }
+
+        .image-item {
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #f5f5f5;
+            transition: transform 0.2s;
+        }
+
+        .image-item:hover {
+            transform: scale(1.05);
+        }
+
+        .image-item img {
+            width: 100%;
+            height: 130px;
+            object-fit: cover;
+        }
+
+        .image-item .image-name {
+            padding: 6px;
+            font-size: 11px;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            background: white;
+        }
+
+        .image-gps {
+            padding: 4px 6px;
+            font-size: 10px;
+            color: #28a745;
+            background: #f0fff4;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.5;
+            border-top: 1px solid #d4edda;
+        }
+
+        /* Gallery pagination */
+        .gallery-pagination {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 10px;
+            justify-content: center;
+        }
+
+        .gallery-pagination button {
+            padding: 4px 12px;
+            border: 1.5px solid #667eea;
+            border-radius: 6px;
+            background: white;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .gallery-pagination button:hover:not(:disabled) {
+            background: #667eea;
+            color: white;
+        }
+
+        .gallery-pagination button:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+
+        .gallery-pagination .page-info {
+            font-size: 12px;
+            color: #888;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        /* Dataset card */
+        .dataset-card {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .dataset-card h3 {
+            color: white;
+            margin-bottom: 12px;
+        }
+
+        .dataset-card p {
+            margin-bottom: 12px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .dataset-link {
+            display: inline-block;
+            background: white;
+            color: #f5576c;
+            padding: 10px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .dataset-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Ingest result */
+        .ingest-status {
+            font-size: 13px;
+            margin-top: 4px;
+        }
+
+        .ingest-status.ok {
+            color: #28a745;
+        }
+
+        .ingest-status.fail {
+            color: #dc3545;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container" id="mainContainer">
+        <h1>🌴 Hệ Thống Nhận Dạng & Xác Minh Cây</h1>
+
+        <div class="card dataset-card">
+            <h3>📦 Bộ dữ liệu (Dataset)</h3>
+            <p>Tải bộ dữ liệu ảnh cây để kiểm tra hệ thống nhận dạng. Bộ dữ liệu bao gồm ảnh chụp các loại cây dùng cho
+                nạp dữ liệu và xác minh.</p>
+            <a href="https://drive.google.com/drive/folders/1kmQl4YWAE6cI6OCuBX8kp7Q5oNktM1ro" target="_blank"
+                rel="noopener noreferrer" class="dataset-link">
+                📂 Mở Google Drive Dataset
+            </a>
+        </div>
+
+        <div class="card" id="mainCard">
+            <form id="verifyForm">
+                <div class="form-group">
+                    <label>Chế độ thao tác:</label>
+                    <div style="display: flex; gap: 10px;">
+                        <label style="display: flex; align-items: center; font-weight: normal;">
+                            <input type="radio" name="operation" value="verify" checked> 🔍 Xác minh
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; font-weight: normal; opacity: 0.5; cursor: not-allowed;"
+                            title="Chức năng này đã bị tắt">
+                            <input type="radio" name="operation" value="ingest"> 📥 Nạp dữ liệu
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Tải ảnh lên (hỗ trợ nhiều ảnh):</label>
+                    <div class="file-drop-zone" id="dropZone">
+                        <p>📁 Nhấn để chọn hoặc kéo thả ảnh vào đây</p>
+                        <p class="paste-hint">Hoặc nhấn Ctrl+V để dán ảnh từ bộ nhớ tạm</p>
+                        <button type="button" id="pasteBtn" class="paste-btn">📋 Dán từ bộ nhớ tạm</button>
+                        <input type="file" id="imageFile" accept="image/*" multiple style="display: none;">
+                    </div>
+                    <div id="selectedImages" class="selected-images"></div>
+                    <div id="imageCount" class="image-count"></div>
+                </div>
+
+                <!-- Database metadata selection -->
+                <div class="form-group" id="dbMetadataGroup">
+                    <label>📂 Chọn GPS/Góc/Thời gian từ CSDL (cho ảnh thiếu metadata):</label>
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <select id="treeSelectDB" style="flex: 1; padding: 10px; border-radius: 6px; border: 2px solid #e0e0e0;">
+                            <option value="">-- Chọn cây --</option>
+                        </select>
+                        <select id="timelineSelectDB" style="flex: 2; padding: 10px; border-radius: 6px; border: 2px solid #e0e0e0;" disabled>
+                            <option value="">-- Chọn thời điểm/GPS --</option>
+                        </select>
+                    </div>
+                    <button type="button" id="applyMetadataBtn" class="btn" style="padding: 10px 20px; font-size: 14px; width: auto;" disabled>
+                        ✅ Áp dụng metadata cho ảnh đã chọn
+                    </button>
+                    <div id="metadataApplyStatus" style="margin-top: 8px; font-size: 12px; color: #28a745;"></div>
+                </div>
+
+                <div class="form-group" id="treeIdGroup">
+                    <label>Mã cây (dùng cho nạp dữ liệu):</label>
+                    <input type="text" id="treeId" placeholder="Ví dụ: durian_6">
+                </div>
+
+                <div class="form-group" id="knownTreeIdGroup">
+                    <label>Mã cây đã biết (ko bắt buộc, dùng cho xác minh):</label>
+                    <input type="text" id="knownTreeId" placeholder="Ví dụ: durian_6">
+                </div>
+
+
+                <button type="submit" class="btn" id="submitBtn">🔍 Xác minh cây</button>
+            </form>
+
+            <!-- Result area — replaces the old plain-text box -->
+            <div id="resultArea" class="result-area">
+                <div id="resultSummary" class="result-summary"></div>
+                <div id="resultCards"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>📁 Ảnh kiểm tra nhanh theo cây</h3>
+            <div id="treeSelector" style="margin-bottom: 15px;">
+                <label>Chọn cây:</label>
+                <select id="treeSelect"
+                    style="width: 100%; padding: 10px; border-radius: 6px; border: 2px solid #e0e0e0;">
+                    <option value="">-- Tất cả các cây --</option>
+                </select>
+            </div>
+            <div class="image-grid" id="imageGallery"></div>
+        </div>
+
+
+    </div>
+
+    <script>
+        const API_BASE = '';
+        const UI_API = '/api/images';
+
+        const form = document.getElementById('verifyForm');
+        const imageFile = document.getElementById('imageFile');
+        const dropZone = document.getElementById('dropZone');
+        const selectedImagesContainer = document.getElementById('selectedImages');
+        const imageCountDisplay = document.getElementById('imageCount');
+        const submitBtn = document.getElementById('submitBtn');
+        const resultArea = document.getElementById('resultArea');
+        const resultSummary = document.getElementById('resultSummary');
+        const resultCards = document.getElementById('resultCards');
+        const imageGallery = document.getElementById('imageGallery');
+        const pasteBtn = document.getElementById('pasteBtn');
+        const operationRadios = document.querySelectorAll('input[name="operation"]');
+        const treeIdGroup = document.getElementById('treeIdGroup');
+        const knownTreeIdGroup = document.getElementById('knownTreeIdGroup');
+        const treeSelect = document.getElementById('treeSelect');
+
+        // Database metadata selection elements
+        const treeSelectDB = document.getElementById('treeSelectDB');
+        const timelineSelectDB = document.getElementById('timelineSelectDB');
+        const applyMetadataBtn = document.getElementById('applyMetadataBtn');
+        const metadataApplyStatus = document.getElementById('metadataApplyStatus');
+
+        let selectedFiles = [];
+        let allImages = {};
+        let treeMetadataFromDB = {};  // Store metadata from database
+        // Store geo/angle metadata for each selected file (by index)
+        let selectedFileMetadata = {};
+
+        // ==================== RESULT RENDERING ====================
+
+        function getDecisionInfo(decision) {
+            const map = {
+                'MATCH': { icon: '✅', label: 'Khớp', badgeClass: 'badge-match', desc: 'Hệ thống đã tìm thấy cây trùng khớp trong cơ sở dữ liệu.' },
+                'NO_MATCH': { icon: '❌', label: 'Không khớp', badgeClass: 'badge-no-match', desc: 'Không tìm thấy cây nào trùng khớp.' },
+            };
+            return map[decision] || { icon: '❓', label: decision || 'Không rõ', badgeClass: 'badge-unknown', desc: '' };
+        }
+
+        function getBarClass(pct) {
+            if (pct >= 70) return 'bar-high';
+            if (pct >= 40) return 'bar-medium';
+            return 'bar-low';
+        }
+
+        function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : 'N/A'; }
+        function num(v) { return v != null ? v.toLocaleString() : 'N/A'; }
+        function sci(v) { return v != null ? v.toExponential(3) : 'N/A'; }
+
+        // Format Unix timestamp (seconds) to human-readable format
+        function formatTimestamp(timestamp) {
+            if (timestamp == null || timestamp === 0) return 'N/A';
+
+            // Handle string timestamps (ISO format from user input)
+            if (typeof timestamp === 'string') {
+                try {
+                    // Try to parse as ISO string
+                    const date = new Date(timestamp);
+                    if (!isNaN(date.getTime())) {
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        const hours = String(date.getHours()).padStart(2, '0');
+                        const minutes = String(date.getMinutes()).padStart(2, '0');
+                        const seconds = String(date.getSeconds()).padStart(2, '0');
+                        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+                    }
+                } catch (e) {
+                    return 'N/A';
+                }
+            }
+
+            // Handle numeric timestamps (Unix epoch in seconds)
+            // timestamp is in seconds, convert to milliseconds
+            const date = new Date(timestamp * 1000);
+            // Format as YYYY-MM-DD HH:MM:SS
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        }
+
+        function renderVerifyResults(results) {
+            resultArea.classList.add('show');
+
+            const matchCount = results.filter(r => r.decision === 'MATCH').length;
+            resultSummary.className = 'result-summary ' + (matchCount > 0 ? 'success' : 'error');
+            resultSummary.innerHTML = `🔍 Đã xác minh <strong>${results.length}</strong> ảnh — ` +
+                `<strong>${matchCount}</strong> khớp, <strong>${results.length - matchCount}</strong> không khớp`;
+
+            resultCards.innerHTML = '';
+            results.forEach((r, idx) => {
+                const info = getDecisionInfo(r.decision);
+                const conf = r.confidence != null ? r.confidence : 0;
+                const confPct = (conf * 100).toFixed(1);
+                const bm = r.best_match || {};
+
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                card.innerHTML = `
+                    <!-- Header (click to toggle) -->
+                    <div class="result-card-header">
+                        <div class="result-icon">${info.icon}</div>
+                        <div class="result-title">
+                            <h4>${r.filename}</h4>
+                            <div class="result-subtitle">Cây: <strong>${r.matched_tree_id || '—'}</strong></div>
+                        </div>
+                        <div class="header-right">
+                            <span class="header-confidence">${confPct}%</span>
+                            <span class="result-badge ${info.badgeClass}">${info.label}</span>
+                            <span class="chevron">▼</span>
+                        </div>
+                    </div>
+                    <!-- Body (collapsed by default) -->
+                    <div class="result-card-body">
+                        <!-- Key metrics -->
+                        <div class="result-metrics">
+                            <div class="metric-box">
+                                <div class="metric-label">Cây khớp</div>
+                                <div class="metric-value highlight">${r.matched_tree_id || '—'}</div>
+                                <div class="metric-desc">Mã cây có điểm tương đồng cao nhất trong CSDL</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">📍 Vĩ độ (Latitude)</div>
+                                <div class="metric-value">${r.input_metadata?.latitude != null ? r.input_metadata.latitude.toFixed(6) : '—'}</div>
+                                <div class="metric-desc">Vĩ độ của vị trí chụp ảnh</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">📍 Kinh độ (Longitude)</div>
+                                <div class="metric-value">${r.input_metadata?.longitude != null ? r.input_metadata.longitude.toFixed(6) : '—'}</div>
+                                <div class="metric-desc">Kinh độ của vị trí chụp ảnh</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">∠ Góc ngang (Hor Angle)</div>
+                                <div class="metric-value">${r.input_metadata?.hor_angle != null ? r.input_metadata.hor_angle.toFixed(1) + '°' : '—'}</div>
+                                <div class="metric-desc">Góc ngang camera (0-360°)</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">∠ Góc dọc (Ver Angle)</div>
+                                <div class="metric-value">${r.input_metadata?.ver_angle != null ? r.input_metadata.ver_angle.toFixed(1) + '°' : '—'}</div>
+                                <div class="metric-desc">Góc dọc camera (-90-90°)</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">📐 Pitch (Góc nghiêng)</div>
+                                <div class="metric-value">${r.input_metadata?.pitch != null ? r.input_metadata.pitch.toFixed(1) + '°' : '—'}</div>
+                                <div class="metric-desc">Góc nghiêng camera (-90-90°)</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">🕐 Thời gian chụp (Input)</div>
+                                <div class="metric-value" style="font-size:14px">${r.input_metadata?.captured_at ? formatTimestamp(r.input_metadata.captured_at) : '—'}</div>
+                                <div class="metric-desc">Thời điểm nhập liệu (YYYY-MM-DD HH:MM:SS)</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">Điểm tổng hợp (Final Score)</div>
+                                <div class="metric-value">${bm.final_score != null ? bm.final_score.toFixed(4) : 'N/A'}</div>
+                                <div class="metric-desc">Kết hợp có trọng số: w1×DINO + w2×match_ratio + w3×inlier_ratio [0–1]</div>
+                            </div>
+                            <!-- Confidence bar full width -->
+                            <div class="confidence-bar-container">
+                                <div class="confidence-bar-label">
+                                    <div class="metric-label" style="margin:0">Độ tin cậy (Confidence)</div>
+                                    <div class="confidence-percent">${confPct}%</div>
+                                </div>
+                                <div class="confidence-bar-track">
+                                    <div class="confidence-bar-fill ${getBarClass(parseFloat(confPct))}"
+                                         style="width: ${Math.min(parseFloat(confPct), 100)}%"></div>
+                                </div>
+                                <div class="metric-desc" style="margin-top:6px">Mức độ chắc chắn về kết quả khớp, dựa trên final_score</div>
+                            </div>
+                        </div>
+
+                        <!-- Giai đoạn 1: DINO Global Features -->
+                        <div style="font-size:12px;color:#667eea;font-weight:600;margin-bottom:8px">🔍 Giai đoạn 1 — Tìm kiếm ứng viên (DINO)</div>
+                        <div class="result-metrics">
+                            <div class="metric-box">
+                                <div class="metric-label">🔗 DINOv3 — Tương đồng toàn cục</div>
+                                <div class="metric-value">${pct(bm.dino_similarity)}</div>
+                                <div class="metric-desc">Cosine similarity [0–1] giữa DINO descriptors toàn ảnh. Lọc nhanh ứng viên.</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">🌿 Kết cấu vỏ cây (Bark Texture)</div>
+                                <div class="metric-value">${pct(bm.bark_texture_similarity)}</div>
+                                <div class="metric-desc">Cosine similarity [0–1] so sánh HSV histogram vỏ cây. Bổ trợ cho DINO.</div>
+                            </div>
+                        </div>
+
+                        <!-- Giai đoạn 2: SuperPoint + LightGlue -->
+                        <div style="font-size:12px;color:#667eea;font-weight:600;margin-bottom:8px">📌 Giai đoạn 2 — Khớp đặc trưng cục bộ (SuperPoint + LightGlue)</div>
+                        <div class="result-metrics">
+                            <div class="metric-box">
+                                <div class="metric-label">📌 Điểm đặc trưng khớp (Matches)</div>
+                                <div class="metric-value">${num(bm.superpoint_matches)}</div>
+                                <div class="metric-desc">Tổng số cặp keypoint khớp từ LightGlue (trước RANSAC lọc)</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">📊 Tỉ lệ khớp (Match Ratio)</div>
+                                <div class="metric-value">${pct(bm.superpoint_match_ratio)}</div>
+                                <div class="metric-desc">= matches / min(query_kp, candidate_kp). Tỉ lệ keypoint được khớp.</div>
+                            </div>
+                        </div>
+
+                        <!-- Giai đoạn 3: RANSAC -->
+                        <div style="font-size:12px;color:#667eea;font-weight:600;margin-bottom:8px">📐 Giai đoạn 3 — Xác minh hình học (RANSAC)</div>
+                        <div class="result-metrics">
+                            <div class="metric-box">
+                                <div class="metric-label">✅ Inlier (điểm chính xác)</div>
+                                <div class="metric-value">${num(bm.superpoint_inliers)}</div>
+                                <div class="metric-desc">Số cặp keypoint còn lại sau RANSAC lọc (tập con của matches)</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">📐 Tỉ lệ inlier RANSAC</div>
+                                <div class="metric-value">${pct(bm.ransac_inlier_ratio)}</div>
+                                <div class="metric-desc">= inliers / matches. Chất lượng lọc RANSAC — càng cao càng nhất quán.</div>
+                            </div>
+                        </div>
+
+                        <!-- Technical details toggle -->
+                        <button class="tech-toggle" onclick="event.stopPropagation(); this.nextElementSibling.classList.toggle('open'); this.textContent = this.nextElementSibling.classList.contains('open') ? '🔼 Ẩn chi tiết kỹ thuật' : '🔽 Xem chi tiết kỹ thuật đầy đủ'">
+                            🔽 Xem chi tiết kỹ thuật đầy đủ
+                        </button>
+                        <div class="tech-details">
+                            <table class="tech-table">
+                                <tr><td>query_id<br><small style="color:#aaa">Mã ảnh truy vấn</small></td><td>${bm.query_id || 'N/A'}</td></tr>
+                                <tr><td>candidate_id<br><small style="color:#aaa">Mã ảnh ứng viên khớp nhất</small></td><td>${bm.candidate_id || 'N/A'}</td></tr>
+                                <tr><td>tree_id<br><small style="color:#aaa">Mã cây của ảnh ứng viên</small></td><td>${bm.tree_id || 'N/A'}</td></tr>
+                                <tr><td>---<br><small style="color:#aaa">--- THÔNG TIN NHẬP LIỆU ---</small></td><td>---</td></tr>
+                                <tr><td>input_latitude<br><small style="color:#aaa">Vĩ độ nhập liệu</small></td><td>${r.input_metadata?.latitude != null ? r.input_metadata.latitude.toFixed(6) : 'N/A'}</td></tr>
+                                <tr><td>input_longitude<br><small style="color:#aaa">Kinh độ nhập liệu</small></td><td>${r.input_metadata?.longitude != null ? r.input_metadata.longitude.toFixed(6) : 'N/A'}</td></tr>
+                                <tr><td>input_hor_angle<br><small style="color:#aaa">Góc ngang nhập liệu (°)</small></td><td>${r.input_metadata?.hor_angle != null ? r.input_metadata.hor_angle.toFixed(2) + '°' : 'N/A'}</td></tr>
+                                <tr><td>input_ver_angle<br><small style="color:#aaa">Góc dọc nhập liệu (°)</small></td><td>${r.input_metadata?.ver_angle != null ? r.input_metadata.ver_angle.toFixed(2) + '°' : 'N/A'}</td></tr>
+                                <tr><td>input_pitch<br><small style="color:#aaa">Pitch nhập liệu (°)</small></td><td>${r.input_metadata?.pitch != null ? r.input_metadata.pitch.toFixed(2) + '°' : 'N/A'}</td></tr>
+                                <tr><td>input_captured_at<br><small style="color:#aaa">Timestamp nhập liệu</small></td><td>${r.input_metadata?.captured_at ? formatTimestamp(r.input_metadata.captured_at) : 'N/A'}</td></tr>
+                                <tr><td>---<br><small style="color:#aaa">--- ĐẶC TRƯNG ---</small></td><td>---</td></tr>
+                                <tr><td>dino_similarity<br><small style="color:#aaa">[GĐ1] Cosine similarity DINO descriptors [0–1]</small></td><td>${bm.dino_similarity != null ? bm.dino_similarity.toFixed(10) : 'N/A'}</td></tr>
+                                <tr><td>superpoint_matches<br><small style="color:#aaa">[GĐ2] Tổng cặp keypoint khớp từ LightGlue</small></td><td>${num(bm.superpoint_matches)}</td></tr>
+                                <tr><td>superpoint_match_ratio<br><small style="color:#aaa">[GĐ2] = matches / min(query_kp, candidate_kp)</small></td><td>${bm.superpoint_match_ratio != null ? bm.superpoint_match_ratio.toFixed(6) : 'N/A'}</td></tr>
+                                <tr><td>superpoint_inliers<br><small style="color:#aaa">[GĐ3] Cặp keypoint còn lại sau RANSAC</small></td><td>${num(bm.superpoint_inliers)}</td></tr>
+                                <tr><td>ransac_inlier_ratio<br><small style="color:#aaa">[GĐ3] = inliers / matches — chất lượng lọc</small></td><td>${bm.ransac_inlier_ratio != null ? bm.ransac_inlier_ratio.toFixed(6) : 'N/A'}</td></tr>
+                                <tr><td>bark_texture_similarity<br><small style="color:#aaa">Cosine similarity HSV histogram vỏ cây [0–1]</small></td><td>${bm.bark_texture_similarity != null ? bm.bark_texture_similarity.toFixed(6) : 'N/A'}</td></tr>
+                                <tr><td>reprojection_error<br><small style="color:#aaa">[GĐ3] Sai số chiếu lại inlier (pixel) — càng thấp càng tốt</small></td><td>${bm.reprojection_error != null ? bm.reprojection_error.toFixed(6) : 'N/A'}</td></tr>
+                                <tr><td>final_score<br><small style="color:#aaa">Điểm kết hợp [0–1] = w1×dino + w2×match + w3×inlier</small></td><td>${bm.final_score != null ? bm.final_score.toFixed(10) : 'N/A'}</td></tr>
+                                <tr><td>confidence<br><small style="color:#aaa">Mức tin cậy tổng thể cho kết quả khớp</small></td><td>${bm.confidence != null ? bm.confidence.toFixed(10) : 'N/A'}</td></tr>
+                                <tr><td>homography<br><small style="color:#aaa">[GĐ3] Ma trận 3×3 biến đổi phối cảnh (mặt phẳng)</small></td><td style="font-size:11px">${bm.homography ? JSON.stringify(bm.homography.map(r => r.map(v => v.toFixed(6)))) : 'N/A'}</td></tr>
+                                <tr><td>fundamental<br><small style="color:#aaa">[GĐ3] Ma trận cơ bản 3×3 (cảnh tổng quát)</small></td><td style="font-size:11px">${bm.fundamental ? JSON.stringify(bm.fundamental) : 'Không có'}</td></tr>
+                                <tr><td>reason<br><small style="color:#aaa">Lý do hệ thống đưa ra kết luận</small></td><td>${r.reason || 'N/A'}</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                // Toggle dropdown on header click
+                card.querySelector('.result-card-header').addEventListener('click', () => {
+                    card.classList.toggle('open');
+                });
+                resultCards.appendChild(card);
+            });
+        }
+
+        function renderIngestResults(results) {
+            resultArea.classList.add('show');
+
+            const okCount = results.filter(r => r.success).length;
+            resultSummary.className = 'result-summary ' + (okCount === results.length ? 'success' : 'error');
+            resultSummary.innerHTML = `📥 Đã nạp <strong>${results.length}</strong> ảnh — ` +
+                `<strong>${okCount}</strong> thành công, <strong>${results.length - okCount}</strong> thất bại`;
+
+            resultCards.innerHTML = '';
+            results.forEach((r, idx) => {
+                const ok = r.success;
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                card.innerHTML = `
+                    <div class="result-card-header">
+                        <div class="result-icon">${ok ? '✅' : '❌'}</div>
+                        <div class="result-title">
+                            <h4>${r.filename}</h4>
+                            <div class="ingest-status ${ok ? 'ok' : 'fail'}">
+                                ${ok ? '✔ Nạp thành công' : '✘ Nạp thất bại'}
+                            </div>
+                        </div>
+                        <div class="header-right">
+                            <span class="result-badge ${ok ? 'badge-match' : 'badge-no-match'}">
+                                ${ok ? 'Thành công' : 'Thất bại'}
+                            </span>
+                            <span class="chevron">▼</span>
+                        </div>
+                    </div>
+                    <div class="result-card-body">
+                        <div class="result-metrics">
+                            <div class="metric-box">
+                                <div class="metric-label">Mã ảnh</div>
+                                <div class="metric-value highlight" style="font-size:14px;word-break:break-all">${r.imageId || 'N/A'}</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">Thông báo</div>
+                                <div class="metric-value" style="font-size:14px">${r.message || 'OK'}</div>
+                            </div>
+                        </div>
+                        <button class="tech-toggle" onclick="event.stopPropagation(); this.nextElementSibling.classList.toggle('open'); this.textContent = this.nextElementSibling.classList.contains('open') ? '🔼 Ẩn JSON' : '🔽 Xem JSON đầy đủ'">
+                            🔽 Xem JSON đầy đủ
+                        </button>
+                        <div class="tech-details">
+                            <pre style="margin:0">${JSON.stringify(r, null, 2)}</pre>
+                        </div>
+                    </div>
+                `;
+                card.querySelector('.result-card-header').addEventListener('click', () => {
+                    card.classList.toggle('open');
+                });
+                resultCards.appendChild(card);
+            });
+        }
+
+        function showError(msg) {
+            resultArea.classList.add('show');
+            resultSummary.className = 'result-summary error';
+            resultSummary.textContent = msg;
+            resultCards.innerHTML = '';
+        }
+
+        function showProcessing() {
+            resultArea.classList.add('show');
+            resultSummary.className = 'result-summary';
+            resultSummary.innerHTML = '⏳ Đang xử lý...';
+            resultCards.innerHTML = '';
+        }
+
+        // ==================== IMAGE GALLERY ====================
+
+        async function loadImages() {
+            try {
+                const resp = await fetch(UI_API);
+                const data = await resp.json();
+                if (data.success) {
+                    allImages = data.trees;
+                    populateTreeSelector();
+                    loadGallery();
+                }
+            } catch (err) {
+                console.error('Không thể tải ảnh:', err);
+            }
+        }
+
+        // ==================== DATABASE METADATA SELECTION ====================
+
+        const TREE_METADATA_API = '/api/tree-metadata';
+
+        async function loadTreeMetadata() {
+            try {
+                const resp = await fetch(TREE_METADATA_API);
+                const data = await resp.json();
+                if (data.success) {
+                    treeMetadataFromDB = data.trees;
+                    populateTreeSelectDB();
+                }
+            } catch (err) {
+                console.error('Không thể tải metadata từ CSDL:', err);
+            }
+        }
+
+        function populateTreeSelectDB() {
+            treeSelectDB.innerHTML = '<option value="">-- Chọn cây --</option>';
+            Object.keys(treeMetadataFromDB).sort().forEach(tree_id => {
+                const option = document.createElement('option');
+                option.value = tree_id;
+                const count = treeMetadataFromDB[tree_id].length;
+                option.textContent = `${tree_id} (${count} thời điểm)`;
+                treeSelectDB.appendChild(option);
+            });
+        }
+
+        // Handle tree selection change
+        treeSelectDB.addEventListener('change', () => {
+            const selectedTree = treeSelectDB.value;
+            timelineSelectDB.innerHTML = '<option value="">-- Chọn thời điểm/GPS --</option>';
+
+            if (selectedTree && treeMetadataFromDB[selectedTree]) {
+                const timelines = treeMetadataFromDB[selectedTree];
+                timelines.forEach((meta, idx) => {
+                    const option = document.createElement('option');
+                    option.value = idx;  // Use index to reference the metadata
+
+                    // Format display text
+                    const lat = meta.latitude != null ? meta.latitude.toFixed(5) : '—';
+                    const lon = meta.longitude != null ? meta.longitude.toFixed(5) : '—';
+                    const hor = meta.hor_angle != null ? meta.hor_angle.toFixed(1) + '°' : '—';
+                    const ver = meta.ver_angle != null ? meta.ver_angle.toFixed(1) + '°' : '—';
+                    const pitch = meta.pitch != null ? meta.pitch.toFixed(1) + '°' : '—';
+                    const ts = meta.captured_at != null ? formatTimestamp(meta.captured_at) : '—';
+
+                    option.textContent = `📍 ${lat}, ${lon} | ∠H:${hor} V:${ver} P:${pitch} | 🕐 ${ts}`;
+                    timelineSelectDB.appendChild(option);
+                });
+                timelineSelectDB.disabled = timelines.length === 0;
+            } else {
+                timelineSelectDB.disabled = true;
+            }
+
+            updateApplyButtonState();
+        });
+
+        // Handle timeline selection change
+        timelineSelectDB.addEventListener('change', updateApplyButtonState);
+
+        function updateApplyButtonState() {
+            const hasTree = treeSelectDB.value !== '';
+            const hasTimeline = timelineSelectDB.value !== '';
+            const hasImages = selectedFiles.length > 0;
+            applyMetadataBtn.disabled = !(hasTree && hasTimeline && hasImages);
+        }
+
+        // Apply metadata to selected images
+        applyMetadataBtn.addEventListener('click', () => {
+            const treeId = treeSelectDB.value;
+            const timelineIdx = timelineSelectDB.value;
+
+            if (treeId === '' || timelineIdx === '' || selectedFiles.length === 0) return;
+
+            const metadata = treeMetadataFromDB[treeId][timelineIdx];
+
+            // Apply to all selected images
+            for (let i = 0; i < selectedFiles.length; i++) {
+                selectedFileMetadata[i] = {
+                    latitude: metadata.latitude,
+                    longitude: metadata.longitude,
+                    hor_angle: metadata.hor_angle,
+                    ver_angle: metadata.ver_angle,
+                    pitch: metadata.pitch,
+                    captured_at: metadata.captured_at
+                };
+            }
+
+            // Show success message
+            metadataApplyStatus.textContent = `✅ Đã áp dụng metadata từ cây "${treeId}" cho ${selectedFiles.length} ảnh`;
+            updateSelectedImages();
+        });
+
+        function populateTreeSelector() {
+            treeSelect.innerHTML = '<option value="">-- Tất cả các cây --</option>';
+            Object.keys(allImages).sort().forEach(tree_id => {
+                const option = document.createElement('option');
+                option.value = tree_id;
+                option.textContent = `${tree_id} (${allImages[tree_id].length} ảnh)`;
+                treeSelect.appendChild(option);
+            });
+        }
+
+        // Gallery pagination state per tree
+        const galleryPage = {};
+        const GALLERY_PAGE_SIZE = 8;
+
+        function loadGallery() {
+            imageGallery.innerHTML = '';
+            const selectedTree = treeSelect.value;
+            let imagesToShow = selectedTree ? allImages[selectedTree] : Object.values(allImages).flat();
+            if (!Array.isArray(imagesToShow)) imagesToShow = [];
+
+            // Group by tree when showing all
+            const treeKey = selectedTree || '__all__';
+            if (galleryPage[treeKey] === undefined) galleryPage[treeKey] = 0;
+
+            const totalPages = Math.max(1, Math.ceil(imagesToShow.length / GALLERY_PAGE_SIZE));
+            // Clamp in case items were removed
+            if (galleryPage[treeKey] >= totalPages) galleryPage[treeKey] = totalPages - 1;
+
+            const start = galleryPage[treeKey] * GALLERY_PAGE_SIZE;
+            const pageItems = imagesToShow.slice(start, start + GALLERY_PAGE_SIZE);
+
+            pageItems.forEach(imageInfo => {
+                let imagePath, imageName;
+                if (typeof imageInfo === 'object' && imageInfo.path) {
+                    imagePath = imageInfo.path; imageName = imageInfo.name;
+                } else if (typeof imageInfo === 'string') {
+                    imagePath = imageInfo; imageName = imageInfo.split('/').pop();
+                } else return;
+
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'image-item';
+                const img = document.createElement('img');
+                img.src = `./ingest-data/${imagePath}`;
+                img.title = imageName;
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'image-name';
+                nameDiv.textContent = imageName;
+
+                const metadata = (typeof imageInfo === 'object') ? {
+                    latitude: imageInfo.latitude,
+                    longitude: imageInfo.longitude,
+                    hor_angle: imageInfo.hor_angle,
+                    ver_angle: imageInfo.ver_angle,
+                    pitch: imageInfo.pitch,
+                    captured_at: imageInfo.captured_at
+                } : {};
+
+                itemDiv.onclick = async () => {
+                    try {
+                        const resp = await fetch(`./ingest-data/${imagePath}`);
+                        const blob = await resp.blob();
+                        const file = new File([blob], imageName, { type: blob.type });
+                        handleFile(file, metadata);
+                    } catch (err) { console.error('Lỗi tải ảnh:', err); }
+                };
+
+                if (metadata && (metadata.latitude != null || metadata.hor_angle != null || metadata.captured_at != null)) {
+                    const gpsDiv = document.createElement('div');
+                    gpsDiv.className = 'image-gps';
+                    const lat = metadata.latitude != null ? metadata.latitude.toFixed(4) : '—';
+                    const lon = metadata.longitude != null ? metadata.longitude.toFixed(4) : '—';
+                    const ang = metadata.hor_angle != null ? metadata.hor_angle.toFixed(1) + '°' : '—';
+                    const ts = metadata.captured_at != null ? formatTimestamp(metadata.captured_at) : null;
+                    gpsDiv.title = `Lat: ${lat}\nLon: ${lon}\nGóc ngang: ${ang}\nGóc dọc: ${metadata.ver_angle != null ? metadata.ver_angle.toFixed(1) + '°' : '—'}${ts ? '\nTimestamp: ' + ts : ''}`;
+                    gpsDiv.textContent = ts ? `🕐 ${ts.substring(0, 10)}` : `📍${lat},${lon} ∠${ang}`;
+                    itemDiv.appendChild(img);
+                    itemDiv.appendChild(nameDiv);
+                    itemDiv.appendChild(gpsDiv);
+                } else {
+                    itemDiv.appendChild(img);
+                    itemDiv.appendChild(nameDiv);
+                }
+                imageGallery.appendChild(itemDiv);
+            });
+
+            // Pagination controls
+            if (imagesToShow.length > GALLERY_PAGE_SIZE) {
+                const pag = document.createElement('div');
+                pag.className = 'gallery-pagination';
+                pag.style.gridColumn = '1 / -1';
+
+                const prevBtn = document.createElement('button');
+                prevBtn.textContent = '← Trước';
+                prevBtn.disabled = galleryPage[treeKey] === 0;
+                prevBtn.onclick = () => { galleryPage[treeKey]--; loadGallery(); };
+
+                const info = document.createElement('span');
+                info.className = 'page-info';
+                info.textContent = `${galleryPage[treeKey] + 1} / ${totalPages} (${imagesToShow.length} ảnh)`;
+
+                const nextBtn = document.createElement('button');
+                nextBtn.textContent = 'Tiếp →';
+                nextBtn.disabled = galleryPage[treeKey] >= totalPages - 1;
+                nextBtn.onclick = () => { galleryPage[treeKey]++; loadGallery(); };
+
+                pag.appendChild(prevBtn);
+                pag.appendChild(info);
+                pag.appendChild(nextBtn);
+                imageGallery.appendChild(pag);
+            }
+        }
+
+        treeSelect.addEventListener('change', () => {
+            // Reset page when tree filter changes
+            const treeKey = treeSelect.value || '__all__';
+            galleryPage[treeKey] = 0;
+            loadGallery();
+        });
+
+        // ==================== FORM HANDLING ====================
+
+        operationRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const isIngest = e.target.value === 'ingest';
+                treeIdGroup.style.display = isIngest ? 'block' : 'none';
+                knownTreeIdGroup.style.display = isIngest ? 'none' : 'block';
+                submitBtn.textContent = isIngest
+                    ? '📥 Nạp dữ liệu (Trích xuất đặc điểm và lưu trữ)'
+                    : '🔍 Xác minh cây (Tìm thông tin cây)';
+                // Re-render selected images so GPS panels appear/disappear correctly
+                updateSelectedImages();
+            });
+        });
+        treeIdGroup.style.display = 'none';
+
+        // ==================== CLIPBOARD / FILE HANDLING ====================
+
+        pasteBtn.addEventListener('click', async (e) => {
+            e.preventDefault(); e.stopPropagation();
+            try {
+                const clipboardItems = await navigator.clipboard.read();
+                for (const item of clipboardItems) {
+                    for (const type of item.types) {
+                        if (type.startsWith('image/')) {
+                            const blob = await item.getType(type);
+                            handleFile(new File([blob], 'dan_' + Date.now() + '.png', { type }));
+                            return;
+                        }
+                    }
+                }
+            } catch (err) { console.log('Clipboard thất bại:', err); }
+            alert('Không tìm thấy ảnh trong bộ nhớ tạm. Vui lòng sao chép ảnh trước rồi thử lại.');
+        });
+
+        function updateSelectedImages() {
+            selectedImagesContainer.innerHTML = '';
+            imageCountDisplay.textContent = selectedFiles.length > 0 ? `Đã chọn ${selectedFiles.length} ảnh` : '';
+
+            // Update the apply button state
+            updateApplyButtonState();
+
+            selectedFiles.forEach((file, index) => {
+                const div = document.createElement('div');
+                div.className = 'selected-image-item';
+
+                // Thumbnail
+                const img = document.createElement('img');
+                const reader = new FileReader();
+                reader.onload = (e) => { img.src = e.target.result; };
+                reader.readAsDataURL(file);
+
+                // Remove button
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-btn';
+                removeBtn.textContent = '×';
+                removeBtn.onclick = () => {
+                    selectedFiles.splice(index, 1);
+                    delete selectedFileMetadata[index];
+                    // Re-key remaining metadata correctly
+                    const rebuilt = {};
+                    Object.keys(selectedFileMetadata).forEach(k => {
+                        const ki = parseInt(k);
+                        if (ki < index) rebuilt[ki] = selectedFileMetadata[ki];
+                        else if (ki > index) rebuilt[ki - 1] = selectedFileMetadata[ki];
+                    });
+                    Object.keys(selectedFileMetadata).forEach(k => delete selectedFileMetadata[k]);
+                    Object.assign(selectedFileMetadata, rebuilt);
+                    updateSelectedImages();
+                };
+
+                div.appendChild(img);
+                div.appendChild(removeBtn);
+
+                // ── Per-image GPS/angle edit panel ─────────────────────────
+                const operation = document.querySelector('input[name="operation"]:checked').value;
+                if (operation === 'verify') {
+                    const meta = selectedFileMetadata[index] || {};
+
+                    const panel = document.createElement('div');
+                    panel.className = 'img-geo-edit';
+
+                    function mkField(labelTxt, field, placeholder, inputType = 'number') {
+                        const lbl = document.createElement('label');
+                        lbl.textContent = labelTxt;
+                        const inp = document.createElement('input');
+                        inp.type = inputType;
+                        inp.step = 'any';
+                        inp.placeholder = placeholder;
+
+                        // Populate default value from metadata
+                        if (meta[field] != null) {
+                            // For timestamp, convert Unix epoch (seconds) to ISO 8601 string
+                            if (field === 'captured_at' && typeof meta[field] === 'number') {
+                                inp.value = new Date(meta[field] * 1000).toISOString();
+                            } else {
+                                inp.value = meta[field];
+                            }
+                        }
+
+                        inp.id = `img_${index}_${field}`;
+                        inp.addEventListener('input', () => {
+                            if (!selectedFileMetadata[index]) selectedFileMetadata[index] = {};
+                            const v = inp.value.trim();
+                            // For timestamp, keep as string; for others, parse as float
+                            if (field === 'captured_at') {
+                                selectedFileMetadata[index][field] = v || null;
+                            } else {
+                                selectedFileMetadata[index][field] = v ? parseFloat(v) : null;
+                            }
+                        });
+                        panel.appendChild(lbl);
+                        panel.appendChild(inp);
+                    }
+
+                    mkField('📍 Lat', 'latitude', 'Vĩ độ');
+                    mkField('📍 Lon', 'longitude', 'Kinh độ');
+                    mkField('∠ Ngang°', 'hor_angle', '0–360');
+                    mkField('∠ Dọc°', 'ver_angle', '-90–90');
+                    mkField('📐 Pitch°', 'pitch', '-90–90');
+                    mkField('🕐 Timestamp', 'captured_at', 'ISO 8601 (e.g. 2025-06-01T10:30:00Z)', 'text');
+
+                    div.appendChild(panel);
+                }
+
+                selectedImagesContainer.appendChild(div);
+            });
+        }
+
+        function handleFiles(files) {
+            const nf = Array.from(files).filter(f => f.type.startsWith('image/'));
+            selectedFiles.push(...nf); updateSelectedImages();
+        }
+
+        // Handle a single file with optional metadata (from gallery selection)
+        function handleFile(file, metadata = null) {
+            if (file.type.startsWith('image/')) {
+                const index = selectedFiles.length;
+                selectedFiles.push(file);
+                // Store metadata if provided (from gallery) - include captured_at check
+                if (metadata && (metadata.latitude != null || metadata.longitude != null || metadata.hor_angle != null || metadata.captured_at != null)) {
+                    selectedFileMetadata[index] = metadata;
+                }
+                updateSelectedImages();
+            }
+        }
+
+        dropZone.onclick = () => imageFile.click();
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); };
+        dropZone.ondragleave = () => { dropZone.classList.remove('drag-over'); };
+        dropZone.ondrop = (e) => {
+            e.preventDefault(); dropZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
+        };
+
+        async function tryNavigatorClipboard() {
+            try {
+                const items = await navigator.clipboard.read();
+                for (const item of items) {
+                    for (const type of item.types) {
+                        if (type.startsWith('image/')) {
+                            const blob = await item.getType(type);
+                            handleFile(new File([blob], 'dan_' + Date.now() + '.png', { type }));
+                            return true;
+                        }
+                    }
+                }
+            } catch (e) { }
+            return false;
+        }
+
+        async function handlePasteEvent(e) {
+            const tag = document.activeElement?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+            const items = e.clipboardData?.items;
+            if (items) {
+                for (const item of items) {
+                    if (item.type.startsWith('image/')) {
+                        const blob = item.getAsFile();
+                        if (blob) {
+                            handleFile(new File([blob], 'dan_' + Date.now() + '.png', { type: item.type }));
+                            e.preventDefault(); return;
+                        }
+                    }
+                }
+            }
+            const files = e.clipboardData?.files;
+            if (files && files.length > 0) {
+                for (const file of files) {
+                    if (file.type.startsWith('image/')) { handleFile(file); e.preventDefault(); return; }
+                }
+            }
+            const ok = await tryNavigatorClipboard();
+            if (ok) { e.preventDefault(); }
+        }
+        window.addEventListener('paste', handlePasteEvent);
+
+        imageFile.onchange = (e) => { if (e.target.files.length > 0) handleFiles(e.target.files); };
+
+        // ==================== SUBMIT ====================
+
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            if (selectedFiles.length === 0) { showError('❌ Vui lòng chọn ít nhất một ảnh'); return; }
+            const operation = document.querySelector('input[name="operation"]:checked').value;
+            if (operation === 'ingest') await handleIngest(); else await handleVerify();
+        };
+
+        async function handleIngest() {
+            const treeId = document.getElementById('treeId').value.trim();
+            if (!treeId) { showError('❌ Vui lòng nhập Mã cây để nạp dữ liệu'); return; }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = `Đang nạp ${selectedFiles.length} ảnh... (vui lòng không tắt tab này)`;
+            showProcessing();
+
+            try {
+                const results = [];
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i];
+                    const imageId = `${treeId}_${Date.now()}_${i}`;
+                    const url = new URL(`${window.location.origin}/ingest`);
+                    url.searchParams.append('imageId', imageId);
+                    url.searchParams.append('treeId', treeId);
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/octet-stream' },
+                        body: file
+                    });
+                    const data = await res.json();
+                    results.push({ filename: file.name, imageId, ...data });
+                    submitBtn.textContent = `Đang nạp ${i + 1}/${selectedFiles.length}... vui lòng không tắt tab này`;
+                }
+                renderIngestResults(results);
+            } catch (err) {
+                showError(`❌ Thất bại: ${err.message}\n\nHãy chắc chắn FastAPI đang chạy (python main.py)`);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '📥 Nạp dữ liệu';
+            }
+        }
+
+        async function handleVerify() {
+            const knownTreeId = document.getElementById('knownTreeId').value.trim();
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = `Đang xác minh ${selectedFiles.length} ảnh...`;
+            showProcessing();
+
+            try {
+                const results = [];
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i];
+                    const url = new URL(`${window.location.origin}/verify`);
+                    if (knownTreeId) url.searchParams.append('known_tree_id', knownTreeId);
+
+                    // Per-image inputs → Milvus metadata → omit
+                    const meta = selectedFileMetadata[i] || {};
+
+                    const piLat = document.getElementById(`img_${i}_latitude`);
+                    const piLon = document.getElementById(`img_${i}_longitude`);
+                    const piHor = document.getElementById(`img_${i}_hor_angle`);
+                    const piVer = document.getElementById(`img_${i}_ver_angle`);
+                    const piPitch = document.getElementById(`img_${i}_pitch`);
+                    const piTs = document.getElementById(`img_${i}_captured_at`);
+
+                    const imgLat = piLat && piLat.value.trim() ? parseFloat(piLat.value) : (meta.latitude ?? null);
+                    const imgLon = piLon && piLon.value.trim() ? parseFloat(piLon.value) : (meta.longitude ?? null);
+                    const imgHor = piHor && piHor.value.trim() ? parseFloat(piHor.value) : (meta.hor_angle ?? null);
+                    const imgVer = piVer && piVer.value.trim() ? parseFloat(piVer.value) : (meta.ver_angle ?? null);
+                    const imgPitch = piPitch && piPitch.value.trim() ? parseFloat(piPitch.value) : (meta.pitch ?? null);
+
+                    // Handle timestamp: if user entered ISO string, convert to Unix timestamp for storage
+                    let imgTs = null;
+                    if (piTs && piTs.value.trim()) {
+                        // User entered a value - keep as string for API, will be sent to backend
+                        imgTs = piTs.value.trim();
+                    } else if (meta.captured_at != null) {
+                        // Convert Unix timestamp to ISO string for API
+                        imgTs = new Date(meta.captured_at * 1000).toISOString();
+                    }
+
+                    if (imgLat !== null && imgLon !== null) {
+                        url.searchParams.append('latitude', imgLat);
+                        url.searchParams.append('longitude', imgLon);
+                        url.searchParams.append('radius', 10);
+                    }
+                    if (imgHor !== null) url.searchParams.append('hor_angle', imgHor);
+                    if (imgVer !== null) url.searchParams.append('ver_angle', imgVer);
+                    if (imgPitch !== null) url.searchParams.append('pitch', imgPitch);
+                    if (imgTs !== null) url.searchParams.append('captured_at', imgTs);
+
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/octet-stream' },
+                        body: file
+                    });
+                    const data = await res.json();
+
+                    // Capture input metadata for display in results
+                    const input_metadata = {
+                        latitude: imgLat,
+                        longitude: imgLon,
+                        hor_angle: imgHor,
+                        ver_angle: imgVer,
+                        pitch: imgPitch,
+                        captured_at: imgTs
+                    };
+
+                    results.push({ filename: file.name, input_metadata, ...data });
+                    submitBtn.textContent = `Đang xác minh ${i + 1}/${selectedFiles.length}...`;
+                }
+                renderVerifyResults(results);
+            } catch (err) {
+                showError(`❌ Thất bại: ${err.message}\n\nHãy chắc chắn FastAPI đang chạy (python main.py)`);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🔍 Xác minh cây';
+            }
+        }
+
+        window.addEventListener('load', () => {
+            loadImages();
+            loadTreeMetadata();
+        });
+    </script>
+</body>
+
+</html>

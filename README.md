@@ -1187,7 +1187,3 @@ CUDA_STREAMS = 8                   # Parallel CUDA streams
 **Last Updated**: 2026-02-11
 **Version**: 1.1.0
 **Documentation**: Updated with Multi-Signal Reference
-# tests
-# tests
-# tests
-# tests

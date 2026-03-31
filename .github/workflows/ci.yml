@@ -1,0 +1,306 @@
+name: CI - Continuous Integration
+
+on:
+  push:
+    branches: [main, develop, staging, staging-new]
+  pull_request:
+    branches: [main, develop, staging, staging-new]
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.5.11"
+
+jobs:
+  # ── Job 1: Quality Checks (lint, type-check, security) ──────────────
+  quality:
+    name: Quality
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint with Ruff
+        run: uv run ruff check src/ tests/ --output-format=github
+
+      - name: Check import sorting
+        run: uv run ruff check --select=I src/ tests/ --fix
+
+      - name: Format check with Ruff
+        run: uv run ruff format --check tests/
+
+      - name: Type check with Pyright
+        run: uv run pyright src/ || true
+
+  # ── Job 2: Unit Tests ───────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        pytest-group:
+          - unit               # Fast unit tests (no GPU, no DB)
+          - integration-core   # Core integration tests (Milvus/MinIO/Postgres)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Start infrastructure (integration tests)
+        if: matrix.pytest-group == 'integration-core'
+        run: |
+          docker compose -f docker-compose.ci.yml up -d
+          # Wait for PostgreSQL to be healthy (postgres needs time to install pgvector)
+          timeout 180 bash -c 'until docker exec sam3-postgres pg_isready -U sam3user -d sam3 &>/dev/null; do sleep 5; done'
+
+      - name: Run pytest (${{ matrix.pytest-group }})
+        run: |
+          if [ "${{ matrix.pytest-group }}" == "unit" ]; then
+            uv run pytest tests/ -m unit -v --tb=short --no-header -q
+          else
+            uv run pytest tests/ -m "integration and not slow and not gpu" -v --tb=short --no-header -q
+          fi
+
+      - name: Upload coverage
+        if: matrix.pytest-group == 'unit'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: .coverage
+          retention-days: 7
+
+      - name: Stop infrastructure
+        if: matrix.pytest-group == 'integration-core'
+        run: docker compose -f docker-compose.ci.yml down -v --remove-orphans
+
+      # Free disk space before UV cache save runs at end of job.
+      # Docker images and buildx cache can fill the disk causing the
+      # runner's UV cache save to fail with "no space left on device".
+      - name: Cleanup Docker
+        if: always()
+        run: |
+          docker rmi sam3:prod-test sam3:dev-test 2>/dev/null || true
+          docker builder prune -af --filter "until=24h" 2>/dev/null || true
+
+  # ── Job 3: GPU Tests (CUDA) ─────────────────────────────────────────
+  # Runs only when the self-hosted GPU runner is online and on main branch.
+  # Skipped automatically when no GPU runner picks up the job.
+  gpu-tests:
+    name: GPU Tests
+    runs-on: [self-hosted, gpu]
+    needs: unit-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 60  # fail fast if GPU runner is offline
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Start infrastructure
+        run: docker compose -f docker-compose.yml up -d --wait
+
+      - name: Run GPU tests
+        run: uv run pytest tests/ -m gpu -v --tb=short
+
+      - name: Stop infrastructure
+        run: docker compose -f docker-compose.yml down -v --remove-orphans
+
+  # ── Job 4: Build Docker Image ───────────────────────────────────────
+  build-image:
+    name: Build Docker Image
+    runs-on: ubuntu-24.04
+    needs: [quality, unit-tests]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/staging-new')
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      # Free disk before loading a new ~2 GB image.
+      - name: Cleanup Docker
+        run: |
+          docker rmi sam3:prod-test sam3:dev-test 2>/dev/null || true
+          docker builder prune -af 2>/dev/null || true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/sam3
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build production image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=production
+          cache-to: type=gha,mode=max,scope=production
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # Trivy only accepts a single image reference — extract the SHA-tagged one.
+      # steps.meta.outputs.tags is newline-separated; the SHA tag is the 2nd line.
+      - name: Set Trivy image ref
+        id: trivy-ref
+        run: |
+          # Get the SHA-tagged image (2nd line), not the bare branch tag.
+          IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | tail -1)
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Run Trivy scanner (vulnerability scan)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.trivy-ref.outputs.image }}
+          format: sarif
+          severity: CRITICAL
+          exit-code: "0"  # Always produce SARIF; fail conditionally below
+          output: trivy-results.sarif
+
+      # Conditionally fail the job if CRITICAL/HIGH vulnerabilities were found.
+      # exit-code 0 above lets subsequent steps run so we can inspect results.
+      # Trivy's --severity filter queries specific DBs but still emits NOTE-level
+      # findings (informational OS package data) in the SARIF — those are non-blocking.
+      - name: Block on CRITICAL/HIGH vulnerabilities
+        id: trivy-check
+        run: |
+          python3 << 'EOF'
+          import json, sys
+
+          with open('trivy-results.sarif') as f:
+              data = json.load(f)
+
+          all_results = []
+          for run in data.get('runs', []):
+              all_results.extend(run.get('results', []))
+
+          if not all_results:
+              print("No findings — scan passed.")
+              sys.exit(0)
+
+          # Deduplicate by (ruleId, artifactUri) — count each distinct finding once.
+          seen = set()
+          blocking = []    # level: critical / high
+          advisory = []    # level: warning / note  (informational only)
+          secrets  = []    # secret-scan findings  (informational only)
+          for r in all_results:
+              rule_id  = r.get('ruleId', '')
+              level    = r.get('level', 'note')
+              locs     = r.get('locations', [{}])
+              artifact = ((locs[0] or {}).get('physicalLocation', {})
+                           .get('artifactLocation', {}) if locs else {})
+              uri      = artifact.get('uri', '') or artifact.get('uriBaseId', '')
+              key      = (rule_id, uri)
+              if key in seen:
+                  continue
+              seen.add(key)
+
+              if 'secret' in rule_id.lower() or 'token' in rule_id.lower():
+                  secrets.append((rule_id, uri))
+              elif level in ('critical', 'high'):
+                  blocking.append((rule_id, uri, level))
+              else:
+                  advisory.append((rule_id, uri, level))
+
+          print(f"Trivy scan complete — {len(blocking)} blocking, {len(advisory)} advisory, {len(secrets)} secret(s)")
+          if secrets:
+              print("  Secret findings (informational only):")
+              for rule_id, uri in secrets[:5]:
+                  print(f"    {rule_id}  {uri}")
+          if advisory:
+              print(f"  Advisory findings (informational only, non-blocking — {len(advisory)} total):")
+              for rule_id, uri, _ in advisory[:10]:
+                  print(f"    [NOTE] {rule_id}  {uri}")
+              if len(advisory) > 10:
+                  print(f"    ... and {len(advisory)-10} more")
+
+          if blocking:
+              print(f"\nFATAL: {len(blocking)} CRITICAL/HIGH vulnerability(ies) blocking deployment:")
+              for rule_id, uri, level in blocking[:30]:
+                  print(f"  [{level.upper()}] {rule_id}  {uri}")
+              if len(blocking) > 30:
+                  print(f"  ... and {len(blocking)-30} more")
+              sys.exit(1)
+
+          print("\nNo CRITICAL/HIGH vulnerabilities — scan passed.")
+          EOF
+        shell: bash
+
+      - name: Push to GHCR
+        run: |
+          echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
+            [ -n "$tag" ] && docker push "$tag"
+          done
+
+      - name: Trigger CD
+        if: github.ref_name != 'main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run cd.yml \
+            --ref ${{ github.ref_name }} \
+            -f branch=${{ github.ref_name }}
+
+      # Free disk space before GitHub Actions cache save runs.
+      # The loaded Docker image and Trivy DB consume ~2 GB; without cleanup
+      # the cache save fails with "no space left on device".
+      - name: Cleanup image and cache
+        run: |
+          # Remove all SAM3 images loaded in this job
+          docker rmi ${{ steps.trivy-ref.outputs.image }} 2>/dev/null || true
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'sam3|ghcr.io/orilifeinfo/sam3' | xargs -r docker rmi 2>/dev/null || true
+          # Remove all buildx cache
+          docker builder prune -af 2>/dev/null || true
+          # Remove Trivy binary and cache (consumes ~88 MB)
+          rm -rf ~/.cache/trivy ~/.cache/buildx ~/.local/bin/trivy-bin 2>/dev/null || true

@@ -1,0 +1,240 @@
+version: '3.8'
+
+networks:
+  default:
+    name: sam3-network
+
+volumes:
+  milvus_data:
+  minio_data:
+  etcd_data:
+  prometheus_data:
+  grafana_data:
+  postgres_data:
+
+services:
+
+  # ── PostgreSQL + PostGIS + pgvector ───────────────────────────────────────
+  postgres:
+    image: postgis/postgis:16-3.4           # PostgreSQL 16 + PostGIS 3.4 + pgcrypto
+    container_name: sam3-postgres
+    environment:
+      POSTGRES_DB:       sam3
+      POSTGRES_USER:     sam3user
+      POSTGRES_PASSWORD: sam3pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Enable pgcrypto on first boot
+      - ./scripts/init-pgcrypto.sql:/docker-entrypoint-initdb.d/01-pgcrypto.sql:ro
+      # Enable pgvector and PostGIS extensions
+      - ./scripts/init-pgvector-postgis.sql:/docker-entrypoint-initdb.d/02-pgvector-postgis.sql:ro
+    # Install pgvector on container start (postgis image doesn't include it by default)
+    command: >
+      bash -c "apt-get update && apt-get install -y postgresql-16-pgvector
+      && docker-entrypoint.sh postgres"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sam3user -d sam3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Milvus Vector Database
+  milvus:
+    image: milvusdb/milvus:v2.4.15
+    container_name: milvus
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - MINIO_ADDRESS=minio:9000
+      - MILVUS_DATA=/var/lib/milvus
+      - MILVUS_USE_GPU=false
+    command: ["milvus", "run", "standalone"]
+    ports:
+      - "19530:19530"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    depends_on:
+      - etcd
+      - minio
+    restart: unless-stopped
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9001:9001"  # Console port
+      - "9000:9000"  # API port
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+
+  # EtCD for Milvus
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.0
+    container_name: etcd
+    environment:
+      - ETCD_NAME=etcd
+      - ETCD_DATA_DIR=/etcd
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER=etcd=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=milvus-etcd
+    volumes:
+      - etcd_data:/etcd
+    restart: unless-stopped
+
+  # Attu - Milvus Web UI
+  attu:
+    container_name: milvus-attu
+    image: zilliz/attu:v2.4
+    environment:
+      MILVUS_URL: milvus:19530
+    ports:
+      - "8000:3000"
+    depends_on:
+      - milvus
+    restart: unless-stopped
+
+  # MinIO Client - Administrative tool for MinIO
+  minio-client:
+    container_name: minio-client
+    image: minio/mc:latest
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set minio http://minio:9000 minioadmin minioadmin; do
+          echo 'Waiting for MinIO...'
+          sleep 1
+        done
+        echo 'MinIO client is ready!'
+        echo 'Access MinIO client with: docker exec -it minio-client mc --help'
+        echo 'Example commands:'
+        echo '  docker exec -it minio-client mc ls minio'
+        echo '  docker exec -it minio-client mc admin info minio'
+        sleep infinity
+    depends_on:
+      - minio
+    restart: unless-stopped
+
+
+  # FastAPI Application - run directly from repository
+  # sam3-api:
+  #   image: python:3.12-slim
+  #   container_name: sam3-api
+  #   environment:
+  #     - MILVUS_URI=http://milvus:19530
+  #     - MINIO_ENDPOINT=minio:9000
+  #     - MINIO_ACCESS_KEY=minioadmin
+  #     - MINIO_SECRET_KEY=minioadmin
+  #     - SAM3_MODEL_PATH=/app/sam3.pt
+  #     - SAM3_DEVICE=cuda
+  #     - DINO_DEVICE=cuda
+  #     - LG_DEVICE=cuda
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - .:/app
+  #     - /app/sam3.pt:/app/sam3.pt:ro
+  #   working_dir: /app
+  #   command: python -m uvicorn main:app --host 0.0.0.0 --port 8000
+  #   depends_on:
+  #     - milvus
+  #     - minio
+  #   restart: unless-stopped
+  #   profiles:
+  #     - dev
+
+  # Development environment for running without building
+  # sam3-dev:
+  #   image: python:3.12-slim
+  #   container_name: sam3-dev
+  #   environment:
+  #     - MILVUS_URI=http://milvus:19530
+  #     - MINIO_ENDPOINT=minio:9000
+  #     - MINIO_ACCESS_KEY=minioadmin
+  #     - MINIO_SECRET_KEY=minioadmin
+  #     - SAM3_MODEL_PATH=/app/sam3.pt
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - .:/app
+  #     - /app/sam3.pt:/app/sam3.pt:ro
+  #   working_dir: /app
+  #   command: python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+  #   depends_on:
+  #     - milvus
+  #     - minio
+  #   restart: unless-stopped
+  #   profiles:
+  #     - dev
+
+  # # Flask Dashboard (Optional)
+  # web-dashboard:
+  #   image: nginx:alpine
+  #   container_name: web-dashboard
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./dashboard:/usr/share/nginx/html
+  #   restart: unless-stopped
+
+  # Prometheus - Monitoring and Alerting
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus_data:/prometheus
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--web.console.libraries=/etc/prometheus/console_libraries'
+  #     - '--web.console.templates=/etc/prometheus/consoles'
+  #     - '--web.enable-lifecycle'
+  #     - '--storage.tsdb.retention.time=200h'
+  #   restart: unless-stopped
+
+  # # Grafana - Monitoring Dashboard
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: grafana
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin123
+  #     - GF_USERS_ALLOW_SIGN_UP=false
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #     - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+  #   restart: unless-stopped
+
+  # # Milvus Monitor - Milvus specific monitoring
+  # milvus-monitor:
+  #   image: milvusdb/milvus-monitor:latest
+  #   container_name: milvus-monitor
+  #   environment:
+  #     - MILVUS_URI=http://milvus:19530
+  #     - PROMETHEUS_URI=http://prometheus:9090
+  #   ports:
+  #     - "3001:3001"
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - milvus
+  #     - prometheus
+
+
+  # MinIO Console (built-in monitoring)
+  # Note: MinIO already provides its web console on port 9001

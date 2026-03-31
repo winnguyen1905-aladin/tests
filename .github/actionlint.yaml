@@ -1,0 +1,5 @@
+# actionlint configuration
+# Valid keys: formatter, no-color, ignore, shellcheck, etc.
+# See: https://github.com/rhysd/actionlint/blob/main/docs/config.md
+formatter: "colored"
+no-color: true

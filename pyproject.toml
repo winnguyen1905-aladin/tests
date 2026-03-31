@@ -1,0 +1,228 @@
+[project]
+name = "sam3-detector"
+version = "0.1.0"
+description = "Comprehensive SAM3 detection script supporting text, exemplar, and visual prompts"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "opencv-python>=4.8.0",
+    "opencv-python-headless>=4.8.0",
+    "pyyaml>=6.0",
+    "pillow>=10.0.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "ftfy>=6.1.0",
+    "regex>=2023.0.0",
+    "fastapi",
+    "uvicorn[standard]",
+    "pymilvus",
+    "python-multipart",
+    "dependency-injector>=4.41.0",
+    "requests",
+    "minio>=7.1.0",
+    "sqlalchemy>=2.0.0",
+    "geoalchemy2>=0.14.0",
+    "pgvector>=0.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+    "pytest-xdist>=3.3.0",        # parallel test execution
+    "pytest-timeout>=2.1.0",
+    "coverage>=7.3.0",
+    # Linting & formatting
+    "ruff>=0.4.0",
+    "pyright>=1.1.300",
+    # Security
+    "bandit>=1.7.5",
+    "safety>=3.0.0",
+    # HTTP client for testing
+    "httpx>=0.27.0",
+    "aiofiles>=23.0.0",
+]
+# CPU-only inference stack — installed in Docker dev stage
+cpu = [
+    "torch>=2.4.0",
+    "torchvision>=0.19.0",
+]
+# Full GPU stack — installed on GPU hardware (e.g. in docker-compose.prod.yml)
+gpu = [
+    "torch>=2.4.0",
+    "torchvision>=0.19.0",
+    "ultralytics>=8.3.237",
+    "transformers>=4.40.0",
+    "accelerate>=0.26.0",
+    "bitsandbytes>=0.49.0",
+    "kornia>=0.6.11",
+    "scipy>=1.10.0",
+    "nvidia-tensorrt>=10.0.0; sys_platform=='linux'",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "E501",     # line too long (handled by formatter)
+    "B008",     # do not perform function calls in argument defaults
+    "B009",     # do not call getattr with constant attribute
+    "C901",     # too complex
+    "SIM102",   # use contextlib.suppress
+    "RUF059",   # unpacked variable not used
+    "W293",     # blank line contains whitespace
+    "F401",     # unused import
+    "I001",     # import order
+    "F541",     # f-string without placeholder
+    "B023",     # function call in default argument
+    "E402",     # module level import not at top of file
+    "B905",     # zip(*...) without strict argument
+    "F841",     # unused local variable
+    "W292",     # no newline at end of file
+    "W291",     # trailing whitespace
+    "F811",     # redefinition of unused name
+    "B904",     # raise from incorrect exception chain
+    "B007",     # unused loop control variable
+    "F823",     # reference to undefined variable
+    "F402",     # import shadowed by import
+    "C408",     # unnecessary dict call
+    "UP006",    # use `dict` instead of `Dict`
+    "UP015",    # redundant float cast
+    "UP017",    # invalid escape sequence
+    "UP035",    # deprecated typing alias
+    "UP037",    # datetime.utc* is deprecated
+    "UP045",    # use `X | None` instead of `Optional[X]`
+    "SIM105",   # use contextlib.suppress
+    "SIM108",   # use ternary
+    "SIM110",   # use `return all(...)`
+    "SIM117",   # nested with statements
+    "RUF002",   # explicit string concatenation
+    "RUF010",   # generated enum member
+    "RUF012",   # mutable default in class body
+    "RUF013",   # implicit optional
+    "RUF022",   # __all__ not sorted
+    "RUF100",   # unused noqa comment
+    "E722",     # bare except
+    "C401",     # unnecessary generator
+    "SIM118",   # use `key in dict` instead of `key in dict.keys()`
+    "RUF015",   # prefer next() over single element slice
+    "F821",     # undefined name
+    "E712",     # comparison to True
+    "W191",     # tab character
+    "RUF003",   # ambiguous dash character
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "B011", "ARG001"]   # allow assert / no builtin loop var / unused arg
+"__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--color=yes",
+]
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (require Milvus/MinIO/PostgreSQL)",
+    "e2e: End-to-end tests (full system flow)",
+    "slow: Slow running tests (>30s)",
+    "gpu: Tests requiring GPU",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+log_cli = false
+log_cli_level = "INFO"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/.venv/*",
+    "*/__pycache__/*",
+    "*/migrations/*",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "@abstract",
+]
+show_missing = true
+skip_empty = true
+
+[tool.pyright]
+include = ["src"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv/**",
+]
+reportMissingImports = false
+reportMissingTypeStubs = false
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+reportAssignmentType = false
+reportReturnType = false
+reportOptionalCall = false
+reportOptionalMemberAccess = false
+reportTypedDictNotRequiredAccess = false
+reportAttributeAccessIssue = false
+reportOptionalIterable = false
+reportCallIssue = false
+reportPrivateImportUsage = false
+reportArgumentType = false
+reportGeneralTypeIssues = false
+reportUnboundVariable = false
+reportOperatorIssue = false
+reportOptionalSubscript = false
+reportUnsupportedDunderAll = false
